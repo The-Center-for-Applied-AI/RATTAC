@@ -1,0 +1,3 @@
+The weather function takes one parameter: location, which is a string representing a city or place for which the weather needs to be fetched. The function returns a string that contains either the weather information for the specified location or an error message.
+
+    This function fetches weather information from a search engine based on the location provided.

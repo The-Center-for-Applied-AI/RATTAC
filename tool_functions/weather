@@ -1,0 +1,48 @@
+def weather(location: str) -> str:
+        # Fetches and extracts the div with id='wtr_cardContainer' from the given URL.
+
+        try:
+            # ./geckodriver
+            service = Service(driver_loc)
+
+            # Initialize options
+            opts = webdriver.FirefoxOptions()
+
+            # Stuff required for Firefox to work with Google Colab
+            opts.add_argument('--headless')
+            opts.add_argument('--no-sandbox')
+            opts.add_argument('--disable-dev-shm-usage')
+
+            # ./firefox/firefox
+            opts.binary_location = binary_loc
+
+            # Set a common User-Agent string
+            opts.set_preference("general.useragent.override",
+                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36")
+            driver = webdriver.Firefox(service=service, options=opts)
+
+            # Install uBlock Origin on Firefox for faster load times
+            if "ublock.firefox.signed.xpi" in os.listdir():
+                driver.install_addon("ublock.firefox.signed.xpi")
+
+            # Open Bing for weather
+            driver.get(f"https://www.bing.com/search?q=weather+in+{location}")
+
+            # Wait for an element to be visible (by ID)
+            wait = WebDriverWait(driver, 10)  # Wait up to 10 seconds
+            wait.until(EC.visibility_of_element_located((By.CLASS_NAME, "wtr_condition2")))
+
+            # Parse the HTML
+            soup = BeautifulSoup(driver.page_source, "html.parser")
+            driver.quit()
+
+            # Extract the <div> with class="wtr_condition2"
+            weather_card = soup.find("div", class_="wtr_condition2")
+
+            if weather_card:
+                return f"Weather for {location}: {weather_card.get_text(separator=' ', strip=True)}"  # Return weather information
+            else:
+                return f"No weather could be found for {location}."
+
+        except requests.exceptions.RequestException as e:
+            return f"The weather tool is currently unavailable"

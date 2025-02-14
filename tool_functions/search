@@ -1,0 +1,62 @@
+def search(query: str) -> str:
+        try:
+            # Scrape Bing for news results
+            news_results = requests.get(f"https://www.bing.com/news/search?q={query}")
+
+            # Parse the HTML
+            soup = BeautifulSoup(news_results.content, "html.parser")
+
+            # Extract the <div> with class="news-card"
+            query_result = soup.find_all("div", class_="news-card")
+
+            if query_result:
+                link_results = []
+                # Get valid news results
+                for news_content in query_result:
+                    main_section = news_content.get('url')
+                    if main_section:
+                        link_results.append(main_section)
+                article_scrapes = []
+                # Get the article information from up to 3 links (limited for speed)
+                for link in link_results[:3]:
+                    try:
+                        # Get article content
+                        article = Article(link)
+                        # Download the article
+                        article.download()
+                        # Parse the content
+                        article.parse()
+                        # Ensure the content is not blank
+                        if article.title.strip() and article.text.strip():
+                            cleaned_article_text = article.text.replace("\n\n", "\n").strip()
+                            article_scrapes.append(f"Title:\n"
+                                                f"{article.title.strip()}\n"
+                                                f"\n"
+                                                f"Article Content:\n"
+                                                f"{cleaned_article_text}\n")
+                    except Exception as e:
+                        pass
+
+                # Format prompt if there is at least one valid article
+                if article_scrapes:
+                    # Set up the prompt for model inference
+                    prompt = (f"Summarize the following articles as a single overall summary:\n"
+                            f"\n")
+                    counter = 1
+                    for article in article_scrapes:
+                        article = article.replace("\n\n", "\n").strip()
+                        prompt += (f"### ARTICLE {counter} ###\n"
+                                f"{article}\n"
+                                f"\n")
+                        counter += 1
+
+                    prompt += (f"Summarize the above articles as one collective summary.")
+                    return prompt
+                else:
+                    return f"No results can be found for {query}."
+            else:
+                return f"No results can be found for {query}."
+
+        except Exception as e:
+            print(e)
+            return f"The search tool is currently unavailable"

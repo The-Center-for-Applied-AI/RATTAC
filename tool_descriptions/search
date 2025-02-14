@@ -1,0 +1,3 @@
+The `search` function takes one parameter: `query`, which is a string representing the search term to look up. The function returns a string, which contains either a summary of news articles related to the query or an error message.
+
+    This function searches for news articles based on the given query and summarizes the content of the articles.
