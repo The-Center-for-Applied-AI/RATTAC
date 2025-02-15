@@ -36,6 +36,7 @@ Any tool a model creates that you do not want later on must be deleted from `too
 # INITIALIZE VARIABLES FOR USE IN THE MAIN PROGRAM
 llm_model = "gpt-4o-mini"
 allow_autonomous_pip_installs = True
+allow_autonomous_chatgpt_prompts = True
 print_verbose_outputs = True
 
 # ENTER IN YOUR OPEN-AI KEY HERE
@@ -146,6 +147,10 @@ print(f"Test Query: {db_search('test')}")
 # SET UP AUTONOMOUS PIP INSTALLS
 # Set to True if you want the LLM to have the ability to install Pip packages.
 # Set to False if you do not want the LLM to have the ability to install Pip packages.
+autonomous_pip_prompt = (f"The function you create is allowed to call `install_python_packages(packages)`, which accepts one argument:\n"
+                         f"- `packages`: A list of strings representing the names of Python packages to install. These packages may be dependencies required by the function you create.\n"
+                         f"The `install_python_packages` function installs the specified packages and returns a string indicating whether the installation was successful or if an error occurred.\n"
+                         f"For executing system-level commands, including package installation, use the `sys` and `subprocess` modules.\n")
 if allow_autonomous_pip_installs:
     def install_python_packages(packages: list) -> str:
         try:
@@ -156,8 +161,29 @@ if allow_autonomous_pip_installs:
         except Exception as pip_e:
             return f"Error: {pip_e}"
 
+# SET UP AUTONOMOUS CHATGPT API CALLS
+# Set to True if you want the LLM to have the ability to make calls to ChatGPT.
+# Set to False if you do not want the LLM to have the ability to make calls to ChatGPT.
+autonomous_chatgpt_prompt = (f"The function you create is allowed to call `use_chatgpt(user_prompt, system_prompt)`, which accepts two arguments:\n"
+                             f"- `user_prompt` (required): A string containing the user's request.\n"
+                             f"- `system_prompt` (optional): A string with predefined instructions for the model. By default, it is set to 'You are a friendly AI assistant.'\n"
+                             f"The `use_chatgpt` function sends a prompt to ChatGPT and returns its response as a string.\n")
+if allow_autonomous_chatgpt_prompts:
+    def use_chatgpt(user_prompt, system_prompt="You are a friendly AI assistant."):
+        oai_client = OpenAI(api_key=KEY)
+        response = oai_client.chat.completions.create(
+            model=llm_model,
+            messages=[
+                {"role": "system", "content": f"{system_prompt}"},
+                {"role": "user", "content": f"{user_prompt}"}],
+            stream=False)
 
-# INITIALIZE DEFAULT CHAT-GPT RESPONSE
+        # Extract the model's reply
+        model_reply = response.choices[0].message.content
+        return model_reply
+
+
+# INITIALIZE DEFAULT CHATGPT RESPONSE
 def model_converse_gpt(prompt):
     oai_client = OpenAI(api_key=KEY)
     response = oai_client.chat.completions.create(
@@ -228,9 +254,6 @@ def model_agent_gpt(prompt, tool, tool_params, tool_description):
 
 # INITIALIZE THE FUNCTION THAT IS TO BE CALLED FOR AN LLM TO MAKE ITSELF A NEW TOOL
 def make_tool(prompt: str) -> dict:
-    autonomous_pip_prompt = (f"The function may use the pre-existing function `install_python_packages(packages)`, which takes one parameter: `packages`, a list of strings representing the names of Python packages to be installed that may be dependencies for the function to be created. This function installs the specified packages and returns a string indicating whether the installation was successful or if an error occurred.\n"
-                             f"Use the `sys` and `subprocess` commands for installing or doing things outside of Python on the main system.\n")
-
     # Call an LLM to make a Python function in code
     oai_client = OpenAI(api_key=KEY)
 
@@ -243,7 +266,8 @@ def make_tool(prompt: str) -> dict:
             {"role": "system", "content": "You are a Python programmer who is skilled at making function definitions."},
             {"role": "user", "content": (f"Make a Python function that performs the requested task in a way that is reusable and adaptable to similar future requests. The function should not be hardcoded to specific values but should be written in a general manner that allows it to handle variations of the task dynamically. The function should be structured to accommodate any similar request by accepting parameters relevant to the task. The function must return a string indicating whether it was successful or if an error occurred.\n"
                                          f"Ensure your function name does not match any existing functions to avoid overriding them. The currently existing functions are: {[file for file in os.listdir('tool_functions') if not file.startswith('.')]}.\n"
-                                         f"{autonomous_pip_prompt if allow_autonomous_pip_installs else ''}"
+                                         f"\n{autonomous_pip_prompt if allow_autonomous_pip_installs else ''}\n"
+                                         f"\n{autonomous_chatgpt_prompt if allow_autonomous_chatgpt_prompts else ''}\n"
                                          f"Only provide Python code as raw text for the function without any additional explanation, formatting, or markdown. The code should not include calls to the function, only its definition.\n"
                                          f"Because you are making a Python function definition, the very first thing in your output should be 'def'.\n"
                                          f"Important: The function's return value must always provide a clear and contextual response. If the function executes successfully, the return string should dynamically reflect the nature of the output. The response format should be meaningful for another system (such as an LLM) that processes it. For example:\n"
