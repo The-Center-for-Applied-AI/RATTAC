@@ -32,3 +32,7 @@ webdriver-manager
 ### Other Requirements:
 - For ChatGPT usage, a valid OpenAI key is required.
 - For Ollama usage, a necessary GPU is required along with the model you wish to use.
+
+
+### A Diagram of RATTAC's Inner Workings
+![RATTAC](https://github.com/user-attachments/assets/17d26be5-84fb-45b0-b61e-45f820e23b62)
