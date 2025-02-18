@@ -38,6 +38,7 @@ llm_model = "gpt-4o-mini"
 allow_autonomous_pip_installs = True
 allow_autonomous_chatgpt_prompts = True
 print_verbose_outputs = True
+remove_tool_upon_too_many_bad_calls = True
 
 # ENTER IN YOUR OPEN-AI KEY HERE
 KEY = ""
@@ -141,6 +142,7 @@ def db_search(query_string: str):
     return_data['description'] = res[0]['entity']['description']
     return_data['distance'] = 1 - res[0]['distance']
     return return_data
+
 print(f"Test Query: {db_search('test')}")
 
 
@@ -151,6 +153,7 @@ autonomous_pip_prompt = (f"The function you create is allowed to call `install_p
                          f"- `packages`: A list of strings representing the names of Python packages to install. These packages may be dependencies required by the function you create.\n"
                          f"The `install_python_packages` function installs the specified packages and returns a string indicating whether the installation was successful or if an error occurred.\n"
                          f"For executing system-level commands, including package installation, use the `sys` and `subprocess` modules.\n")
+
 if allow_autonomous_pip_installs:
     def install_python_packages(packages: list) -> str:
         try:
@@ -161,6 +164,7 @@ if allow_autonomous_pip_installs:
         except Exception as pip_e:
             return f"Error: {pip_e}"
 
+
 # SET UP AUTONOMOUS CHATGPT API CALLS
 # Set to True if you want the LLM to have the ability to make calls to ChatGPT.
 # Set to False if you do not want the LLM to have the ability to make calls to ChatGPT.
@@ -168,6 +172,7 @@ autonomous_chatgpt_prompt = (f"The function you create is allowed to call `use_c
                              f"- `user_prompt` (required): A string containing the user's request.\n"
                              f"- `system_prompt` (optional): A string with predefined instructions for the model. By default, it is set to 'You are a friendly AI assistant.'\n"
                              f"The `use_chatgpt` function sends a prompt to ChatGPT and returns its response as a string.\n")
+
 if allow_autonomous_chatgpt_prompts:
     def use_chatgpt(user_prompt, system_prompt="You are a friendly AI assistant."):
         oai_client = OpenAI(api_key=KEY)
@@ -183,7 +188,7 @@ if allow_autonomous_chatgpt_prompts:
         return model_reply
 
 
-# INITIALIZE DEFAULT CHATGPT RESPONSE
+# INITIALIZE FALLBACK CHATGPT RESPONSE
 def model_converse_gpt(prompt):
     oai_client = OpenAI(api_key=KEY)
     response = oai_client.chat.completions.create(
@@ -222,11 +227,11 @@ def model_converse_with_context_gpt(prompt, model_context):
 
 
 # INITIALIZE A TOOL-USAGE PROMPT FOR AN LLM TO BE ABLE TO CALL A GIVEN TOOL
-def model_agent_gpt(prompt, tool, tool_params, tool_description):
+def use_tool(prompt, tool, tool_params, tool_description):
     oai_client = OpenAI(api_key=KEY)
 
     if print_verbose_outputs:
-        print("Awaiting ChatGPT Agent Response...")
+        print("Awaiting Tool Usage Agent Response...")
 
     response = oai_client.chat.completions.create(
         model=llm_model,
@@ -258,7 +263,7 @@ def make_tool(prompt: str) -> dict:
     oai_client = OpenAI(api_key=KEY)
 
     if print_verbose_outputs:
-        print("Awaiting ChatGPT Agent Creation Response...")
+        print("Awaiting Tool Creation Agent Response...")
 
     response = oai_client.chat.completions.create(
         model=llm_model,
@@ -314,15 +319,6 @@ def make_tool(prompt: str) -> dict:
 
             # Finalize the new tool
             new_content = {'tool': new_tool_name, 'parameters': new_params, 'code': function_reply, 'description': description_reply, 'vector': get_embedding(new_tool_name).tolist()}
-            milvus_client.insert(
-                collection_name=collection_name,
-                data=[new_content])
-
-            # Save the new tool
-            with open(f'tool_functions/{function}', 'w', encoding='utf-8') as file:
-                file.write(function_reply)
-            with open(f'tool_descriptions/{function}', 'w', encoding='utf-8') as file:
-                file.write(description_reply)
 
             # Return the new tool
             return new_content
@@ -334,7 +330,7 @@ def check_tool(prompt, tool, tool_params, tool_description):
     client = OpenAI(api_key=KEY)
 
     if print_verbose_outputs:
-        print("Awaiting ChatGPT Tool Audit...")
+        print("Awaiting Tool Audit Agent Response...")
 
     response = client.chat.completions.create(
         model=llm_model,
@@ -361,7 +357,8 @@ def check_tool(prompt, tool, tool_params, tool_description):
 
 
 if __name__ == '__main__':
-    # THE MAIN LOOP FOR TALKING TO THE RATTAC MODEL
+    # THE MAIN LOOP FOR TALKING TO RATTAC
+    print()
     text = input("Ask RATTAC Agent: ")
     while text != '/bye':
         # Perform a similarity search
@@ -382,54 +379,117 @@ if __name__ == '__main__':
         # Check if the current tool is the right tool for the job
         audit = check_tool(text, returned_tool, returned_parameters, returned_description).lower().translate(
             str.maketrans('', '', string.punctuation)).strip()
-
+        audit_count = 1
         # Check to see if a new tool needs to be generated
-        if audit != 'true':
+        # Continually audit new tool until it is correct
+        # Put a limit to save credits
+        while audit != 'true' and audit_count <= 3:
             if print_verbose_outputs:
                 print("Making New Tool...")
 
+            # Make a new tool according to user's requirements
             new_tool = make_tool(text)
             if new_tool:
-                returned_tool = new_tool['tool'].strip()
+                returned_tool = new_tool['tool'].strip().strip().replace(' ', '_')
                 returned_parameters = new_tool['parameters'].strip()
                 returned_description = new_tool['description']
                 returned_code = new_tool['code'].strip()
+
+                # Audit new tool
+                audit = check_tool(text, returned_tool, returned_parameters, returned_description).lower().translate(
+                    str.maketrans('', '', string.punctuation)).strip()
+
+                # Skip if audit failed
+                if audit != 'true':
+                    if print_verbose_outputs:
+                        print(f"Wrong tool generated, trying again ({audit_count}/3)...")
+                    audit = 'false'
+                    audit_count += 1
+                    continue
+
+                # If audit passed, save new tool
+                milvus_client.insert(
+                    collection_name=collection_name,
+                    data=[new_tool])
+
+                with open(f'tool_functions/{returned_tool}', 'w', encoding='utf-8') as file:
+                    file.write(returned_code)
+                with open(f'tool_descriptions/{returned_tool}', 'w', encoding='utf-8') as file:
+                    file.write(returned_description)
 
                 if print_verbose_outputs:
                     print(f"Tool '{returned_tool}' successfully generated.")
             else:
                 if print_verbose_outputs:
-                    print("Tool could not be generated.")
+                    print(f"Tool creation failed, trying again ({audit_count}/3)...")
+                audit = 'false'
+                audit_count += 1
 
-        # Get a model's tool usage response
-        content = model_agent_gpt(text, returned_tool, returned_parameters, returned_description).strip()
-
-        if print_verbose_outputs:
-            print(f"Tool Agent Response: {content}")
-
-        # Initialize the tool and get the result of the tool call
-        try:
-            exec(returned_code)
-            result = eval(content)
-        except Exception as e:
-            result = "Nothing was found..."
+        # Check audit to see if tool usage is allowed or if fallback to a standard LLM response is required
+        if audit == 'true':
             if print_verbose_outputs:
-                print(e)
+                print(f"Tool Audit Successful!")
+
+            # Get a model's tool usage response
+            content = use_tool(text, returned_tool, returned_parameters, returned_description).strip()
+            result = None
+            usage_count = 1
+            # Check to see if there is a valid result
+            # Continually audit new tool until it is correct
+            # Put a limit to save credits
+            while not result and usage_count <= 3:
+                try:
+                    # Initialize the tool and get the result of the tool call
+                    exec(returned_code)
+                    result = eval(content)
+                    if print_verbose_outputs:
+                        print(f"Tool Usage Agent Response: {content}")
+                except Exception as e:
+                    if print_verbose_outputs:
+                        print(f"Tool Usage Agent Response: {content}")
+                        print(f"Tool Use Failed, trying again ({usage_count}/3)...")
+                    result = None
+                    usage_count += 1
+                    # Get a model's tool usage response
+                    content = use_tool(text, returned_tool, returned_parameters, returned_description).strip()
+
+            if not result:
+                if print_verbose_outputs:
+                    print(f"Tool Use Failed.")
+
+                if remove_tool_upon_too_many_bad_calls:
+                    if print_verbose_outputs:
+                        print(f"Removing Bad Tool...")
+                    try:
+                        milvus_client.delete(
+                            collection_name=collection_name,
+                            where=f"tool = '{returned_tool.replace('_', ' ')}'")
+                        os.remove(f'tool_functions/{returned_tool}')
+                        os.remove(f'tool_descriptions/{returned_tool}')
+                        print(f"Removed Bad Tool.")
+                    except Exception as e:
+                        if print_verbose_outputs:
+                            print(f"Tool Removal Failed.")
+                result = ""
+        else:
+            if print_verbose_outputs:
+                print(f"Tool Audit Failed.")
+            result = ""
 
         # Summarize the outputs into a human-readable format
         model_final_response = ""
-        if result:
+        if result != "":
             if print_verbose_outputs:
-                print("Awaiting ChatGPT Context Converse Response...")
+                print("Awaiting Summarizer With Context Agent Response...")
                 print()
                 model_final_response = model_converse_with_context_gpt(text, result).replace('\n\n', '\n')
             print(f"RATTAC Response: {model_final_response}")
         else:
             if print_verbose_outputs:
-                print("Awaiting ChatGPT Converse Response...")
+                print("Awaiting Summarizer Agent Response...")
                 print()
                 model_final_response = model_converse_gpt(text).replace('\n\n', '\n')
             print(f"RATTAC Response: {model_final_response}")
         print()
         text = input("Ask RATTAC Agent: ")
-    milvus_client.close()
+milvus_client.close()

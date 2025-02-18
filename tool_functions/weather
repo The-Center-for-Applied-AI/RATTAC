@@ -44,5 +44,5 @@ def weather(location: str) -> str:
             else:
                 return f"No weather could be found for {location}."
 
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             return f"The weather tool is currently unavailable"
