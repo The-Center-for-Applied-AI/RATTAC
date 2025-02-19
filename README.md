@@ -1,8 +1,9 @@
 # RATTAC
 A Python implementation of the Retrieval-Automated Tool Techniques And Creation (RATTAC) framework.
 
-### **WARNING:**
-**RATTAC is still in its development stages. If you are going to use it locally, please do so at your own risk. C4AI is NOT responsible for any tools an LLM may use and/or generate. If possible, please use RATTAC in Google Colab or in a sandboxed environment.**
+### ⚠️ **IMPORTANT NOTICE** ⚠️  
+**RATTAC is still under development. If you choose to run it locally, you do so at your own risk. C4AI is not responsible for any tools an LLM may generate or use through RATTAC, nor for any impact these tools may have on your system.  
+For safer use, we strongly recommend running RATTAC in Google Colab or a sandboxed environment whenever possible.**
 
 We at the Center for Applied AI have just made a brand new framework for Agentic AI! We call it Retrieval-Automated Tool Techniques And Creation (RATTAC). The RATTAC framework allows for any non-agentic AI model to become an agentic model with the power of RAG. That's right! The now seemingly arcane practice of RAG is coming back in full swing to help deliver Agentic AI that has never been seen before!
 
